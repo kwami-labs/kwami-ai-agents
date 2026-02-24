@@ -111,8 +111,8 @@ async def handle_full_config(
             
             if new_config.memory.enabled:
                 if not new_config.memory.user_id and new_config.kwami_id:
-                    new_config.memory.user_id = f"kwami_{new_config.kwami_id}"
-                
+                    # Client sends full memory id (e.g. kwami_<auth>_<kwamiId>); use as-is so each kwami has its own memory
+                    new_config.memory.user_id = new_config.kwami_id
                 memory = await create_memory(
                     config=new_config.memory,
                     kwami_id=new_config.kwami_id or "default",
