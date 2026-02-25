@@ -20,7 +20,7 @@ logger = get_logger("usage.reporter")
 
 # API configuration from environment
 API_BASE_URL = os.environ.get("KWAMI_API_URL", "http://localhost:8080")
-INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
+KWAMI_API_KEY = os.environ.get("KWAMI_API_KEY", "")
 
 
 class UsageReporter:
@@ -36,7 +36,7 @@ class UsageReporter:
         api_key: str | None = None,
     ) -> None:
         self._api_url = api_url or API_BASE_URL
-        self._api_key = api_key or INTERNAL_API_KEY
+        self._api_key = api_key or KWAMI_API_KEY
 
     async def report(
         self,
@@ -74,7 +74,7 @@ class UsageReporter:
 
         if not self._api_key:
             logger.warning(
-                "INTERNAL_API_KEY not set, skipping usage report. "
+                "KWAMI_API_KEY not set, skipping usage report. "
                 "Usage will not be billed."
             )
             return False
