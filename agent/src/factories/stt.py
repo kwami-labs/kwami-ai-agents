@@ -70,10 +70,11 @@ def create_stt(config: KwamiVoiceConfig):
             )
         
         elif provider == STTProviders.ELEVENLABS:
-            # Use LiveKit Inference so no ELEVEN_API_KEY needed in the agent
-            stt_model = (model or "scribe-v2-realtime").replace("_", "-")
+            # Use LiveKit Inference so no ELEVEN_API_KEY needed in the agent.
+            # LiveKit Inference expects underscores: elevenlabs/scribe_v2_realtime
+            stt_model = (model or "scribe-v2-realtime").replace("-", "_")
             if not stt_model.startswith("scribe"):
-                stt_model = "scribe-v2-realtime"
+                stt_model = "scribe_v2_realtime"
             model_string = f"elevenlabs/{stt_model}"
             logger.info(f"🎤 Using LiveKit Inference for ElevenLabs STT: {model_string}")
             return inference.STT(
