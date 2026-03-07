@@ -655,6 +655,7 @@ class AgentToolsMixin:
         """
         if not url.startswith(("http://", "https://")):
             url = f"https://{url}"
+        self._last_nav_page_content = ""
         ok = await self._send_nav_command(context, "navigate", url=url)
         if not ok:
             return "Cannot open browser: no room connection available."
@@ -680,40 +681,72 @@ class AgentToolsMixin:
     @function_tool()
     async def close_navigation(self, context: RunContext) -> str:
         """Close the user's navigation window. Use when the user is done browsing or asks to close/stop navigation."""
+        self._last_nav_page_content = ""
         ok = await self._send_nav_command(context, "close")
         if not ok:
             return "Cannot send command: no room connection."
         return "Browser closed."
 
     @function_tool()
-    async def click_in_navigation(self, context: RunContext, element_description: str) -> str:
+    async def click_in_navigation(
+        self,
+        context: RunContext,
+        element_description: str = "",
+        element_id: str = "",
+    ) -> str:
         """Click an element on the page currently open in the navigation window.
-        Describe the element you want to click (e.g. 'first video', 'search button', 'Sign in').
+        Use the page content (from read_navigation_page) to see the HTML and the list of interactive elements with ids (el-0, el-1, ...). Prefer element_id when you can identify the exact element from the list (e.g. element_id='el-5' for the 6th element). Otherwise use element_description (e.g. 'search button', 'first video', 'Sign in').
 
         Args:
-            element_description: Description of the element to click.
+            element_description: Description of the element to click (e.g. 'search button', 'first video'). Use when element_id is not set.
+            element_id: Exact element id from the page content list (e.g. 'el-5'). Use when you have read the page and know which id to click.
         """
-        ok = await self._send_nav_command(context, "click", description=element_description)
+        kwargs = {}
+        if element_id and element_id.strip().startswith("el-"):
+            kwargs["element_id"] = element_id.strip()
+        if element_description and element_description.strip():
+            kwargs["description"] = element_description.strip()
+        if not kwargs:
+            return "Specify either element_description or element_id."
+        ok = await self._send_nav_command(context, "click", **kwargs)
         if not ok:
             return "Cannot send command: no room connection."
-        return f"Clicking on '{element_description}' for the user."
+        if kwargs.get("element_id"):
+            return f"Clicking element {kwargs['element_id']} for the user."
+        return f"Clicking on '{kwargs.get('description', '')}' for the user."
 
     @function_tool()
     async def type_in_navigation(
-        self, context: RunContext, text: str, field_description: str = ""
+        self,
+        context: RunContext,
+        text: str,
+        field_description: str = "",
+        element_id: str = "",
+        clear_first: bool = True,
     ) -> str:
         """Type text into a field on the page currently open in the navigation window.
 
         Args:
             text: The text to type.
             field_description: Optional description of which field to type into (e.g. 'search box'). If empty, types into the currently focused field.
+            element_id: Exact element id from read_navigation_page (e.g. 'el-3'). Preferred when you know the id.
+            clear_first: If True (default), clears the field before typing. Set False to append.
         """
-        ok = await self._send_nav_command(
-            context, "type", inputText=text, description=field_description
-        )
+        desc = field_description
+        if clear_first:
+            desc = f"__clear__{desc}"
+        kwargs: Dict[str, Any] = {"inputText": text, "description": desc}
+        if element_id and element_id.strip().startswith("el-"):
+            kwargs["element_id"] = element_id.strip()
+        ok = await self._send_nav_command(context, "type", **kwargs)
         if not ok:
             return "Cannot send command: no room connection."
-        return f"Typing '{text}'" + (f" in '{field_description}'" if field_description else "")
+        parts = [f"Typing '{text}'"]
+        if element_id:
+            parts.append(f"in element {element_id}")
+        elif field_description:
+            parts.append(f"in '{field_description}'")
+        return " ".join(parts)
 
     @function_tool()
     async def press_key_in_navigation(self, context: RunContext, key: str) -> str:
@@ -742,15 +775,21 @@ class AgentToolsMixin:
     @function_tool()
     async def read_navigation_page(self, context: RunContext) -> str:
         """Read the content of the page currently open in the navigation window.
-        Returns the page text and interactive elements. Use this to understand what is on the page."""
+        Returns the page title, main text, a list of interactive elements with ids (el-0, el-1, ...), and the HTML structure so you see what the user sees. Use this to decide what to click; then use click_in_navigation with element_id='el-N' for precise clicks."""
+        prev = getattr(self, "_last_nav_page_content", "") or ""
+        self._last_nav_page_content = ""
         ok = await self._send_nav_command(context, "read_page")
         if not ok:
             return "Cannot send command: no room connection."
-        # The client will send page content back via nav_page_content data message.
-        # For now, tell the LLM to wait for it or use cached context.
-        if hasattr(self, "_last_nav_page_content") and self._last_nav_page_content:
-            return self._last_nav_page_content
-        return "Requested page content from the navigation window. It will arrive shortly."
+        for _ in range(10):
+            await asyncio.sleep(0.3)
+            content = getattr(self, "_last_nav_page_content", "") or ""
+            if content:
+                return content
+        if prev:
+            self._last_nav_page_content = prev
+            return prev
+        return "Page content not available yet. The page may still be loading — try again in a moment."
 
     # -------------------------------------------------------------------------
     # Search result management
